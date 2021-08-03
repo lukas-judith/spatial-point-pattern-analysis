@@ -1,4 +1,9 @@
 CLC_Distribution_TIFFs/
+old_results/
+old_notebooks/
+Results/
+tif_series/
+extracted_tifs/
 .DS_Store
 .ipynb_checkpoints/
 __pycache__

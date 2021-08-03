@@ -37,30 +37,29 @@ def find_pixels_in_cell(img, threshold):
     return pixel_positions
 
 
-def load_image(filename, folder="CLC_Distribution_TIFFs"):
-    """
-    Returns image and metadata from filepath.
-    """
-    
-    path = os.path.join(folder, filename)
 
-    meta_data = {}
-    
-    with TiffFile(path) as tif:
-        # WARNING: metadata only for first page
-        for info in tif.pages[0].tags.values():
-            key, value = info.name, info.value
-            # toss unneccessary metadata
-           # if not key in ["IJMetadataByteCounts", "IJMetadata"]:
-            meta_data[key] = value
-        im = tif.asarray()
+def K_values_mean_std(img, n_K, range_of_t, mask=None):
+    """
+    Computes the K values (for given range of t) for n_K images containing random noise.
+    Returns mean and std of the K values (arrays with same length as range_of_t).
+    """
 
-    # print metadata
-    #for k in meta_data.keys():
-    #    print(k, ":", meta_data[k])
-    print("Image shape:", im.shape)
+    K_values = []
+
+    for i in range(n_K):
+
+        img_csr = create_csr_img(img, mask)
+        K = ripleys_K_fast(img_csr, range_of_t, printout=False)
+        K_values.append(K)
+
+    K_values = np.array(K_values)
     
-    return im, meta_data
+    # for large-enough n_K, mean_K will have a Gaussian distribution
+    # according to the Central Limit Theorem
+    mean_K = np.mean(K_values, axis=0)
+    std_K = np.std(K_values, axis=0)
+    
+    return mean_K, std_K
 
 
 def ripleys_K_slow(pixel_positions, img_arr, t, _lambda):
@@ -97,7 +96,7 @@ def ripleys_K_slow(pixel_positions, img_arr, t, _lambda):
     return K
 
 
-def ripleys_K(pixel_positions, img_arr, t, _lambda):
+def ripleys_K_semi_vectorized(pixel_positions, img_arr, t, _lambda):
     """
     Returns Ripley's K based on pixel intensity, semi-vectorized.
     """
@@ -279,7 +278,7 @@ def test_auto_correlation_fft():
     assert np.unique(diff).item() == 0
     
     
-def ripleys_K_fast(img_arr, range_of_t):
+def ripleys_K_fast(img_arr, range_of_t, printout=False):
     """
     Computes Ripley's K function for a range of t. Utilizes FFT for fast computation of auto-correlation of the image.
     """
@@ -299,9 +298,9 @@ def ripleys_K_fast(img_arr, range_of_t):
     
     # full array for the auto-correlation of the input image
     # own implementation:
-    full_auto_corr = auto_correlation_fft(arr)
+    #full_auto_corr = auto_correlation_fft(arr)
     # library function:
-    #full_auto_corr = signal.correlate(arr,arr, method='fft')
+    full_auto_corr = signal.correlate(arr, arr, method='fft')
     
     # array whose elements are equal to their Euclidean distance from the center
     diff_xy = distance_arr(full_auto_corr)
@@ -316,8 +315,9 @@ def ripleys_K_fast(img_arr, range_of_t):
         K = sum_ * 1/lambda_ * 1/N
         K_values.append(K)
     
-    t2 = time()  
-    print(f"Completed in {(t2-t1):.2f} seconds")
+    t2 = time()
+    if printout:
+        print(f"Completed in {(t2-t1):.2f} seconds")
     
     return K_values
 
