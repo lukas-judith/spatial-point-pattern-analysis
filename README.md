@@ -1,15 +1,22 @@
 # Spatial Statistical Analysis of Cell Images
 
-Current method to describe spatial distribution within cell images: Use Ripley's K function to compare the actual distribution of marked points in the cell with Complete Spatial Randomness (CSR).
+
+
+How to use the code (More thorough description/explanation will follow):
+
+1. Place all scripts in the folder in which you would like to store your results
+
+2. Open main.py, change parameters under the section "Setup"
+
+   (For taking a better look at all the functions used in this script, see the other .py files)
+
+3. Run main.py  
+
+   --> should generate a folder "Results" at the first run and then, for every run, generate a subfolder 	   named "results\_{current_date}\_#{number_of_the_run}"
+
+   
 
 
 
-1. Load .tif file containing 3D image of cell.
-2. Select xy-slice that shows the biggest part of the cell.
-3. Set all pixels outside the cell area to zero intensity.
-4. Create a "CSR" image in which every pixel in the cell is assigned the average intensity (of pixels within the cell).
-5. Compute and compare Ripley's K function for the real image and the CSR image.
 
 
-
-(More explanations + equations will follow)
