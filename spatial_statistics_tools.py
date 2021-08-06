@@ -278,7 +278,7 @@ def test_auto_correlation_fft():
     assert np.unique(diff).item() == 0
     
     
-def ripleys_K_fast(img_arr, range_of_t, printout=False):
+def ripleys_K_fast(img_arr, mask, range_of_t, printout=False):
     """
     Computes Ripley's K function for a range of t. Utilizes FFT for fast computation of auto-correlation of the image.
     """
@@ -287,7 +287,7 @@ def ripleys_K_fast(img_arr, range_of_t, printout=False):
     # assure datatype that does not cause errors
     arr = img_arr.astype('float32')
     # number of pixels in desired area
-    N = (arr>0).sum()
+    N = np.sum(mask)
     # sum of all pixel intensities
     total_int = np.sum(arr)
     # here, assume A_pixel = 1, thus A=N

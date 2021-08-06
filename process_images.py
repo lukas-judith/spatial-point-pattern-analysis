@@ -305,7 +305,7 @@ def process_image2D(img_array, desired_int, mask_params, rm_background_params, f
     img_csr = scale_image(cell_mask, desired_int) 
     img_real = scale_image(img_cropped, desired_int)
     
-    return img_real, img_csr
+    return img_real, img_csr, cell_mask
 
 
 def compute_K_values(range_of_t, params, filenames_and_z_slices, clc_type, indices, results_dest=".", check_plot=False):
@@ -326,11 +326,11 @@ def compute_K_values(range_of_t, params, filenames_and_z_slices, clc_type, indic
         sub_results_dest = create_folder(name, os.path.join(results_dest,"check_plots"))
         
         img_array, metadata = load_image2D(filepath, z, channel=0)
-        img_real, img_csr = process_image2D(img_array, desired_int, mask_params, rm_background_params, sub_results_dest, check_plot)
+        img_real, img_csr, cell_mask = process_image2D(img_array, desired_int, mask_params, rm_background_params, sub_results_dest, check_plot)
 
         print("Computing K functions...")
-        K_values_real = ripleys_K_fast(img_real, range_of_t, printout=False)
-        K_values_csr = ripleys_K_fast(img_csr, range_of_t, printout=False)
+        K_values_real = ripleys_K_fast(img_real, cell_mask, range_of_t, printout=False)
+        K_values_csr = ripleys_K_fast(img_csr, cell_mask, range_of_t, printout=False)
         
         if check_plot:
             K_diff = np.array(K_values_real)-np.array(K_values_csr)

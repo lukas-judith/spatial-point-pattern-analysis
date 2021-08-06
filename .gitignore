@@ -1,6 +1,7 @@
 CLC_Distribution_TIFFs/
 old_results/
 old_notebooks/
+toy_data_results
 Results/
 tif_series/
 extracted_tifs/

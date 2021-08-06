@@ -28,7 +28,7 @@ channel = 0
 check_plot = True
 
 # comment for current run
-comment = "Another test run"
+comment = "Test run after fixing the 1/N in K function"
 
 # parameters for cropping out cell and creating CSR image
 sigma = 20
