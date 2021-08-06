@@ -4,6 +4,8 @@ from skimage import feature, exposure, restoration
 from scipy.ndimage.morphology import binary_erosion, binary_dilation, binary_fill_holes
 from skimage.filters import gaussian
 
+from matplotlib.colors import LogNorm
+
 # specify directory
 dir_ = "/Users/lukasjudith/Documents/Studium/Master Physik Heidelberg/Semester 2/01 HCI project/Code/spatial-statistical-analysis"
 os.chdir(dir_)
@@ -298,7 +300,7 @@ def process_image2D(img_array, desired_int, mask_params, rm_background_params, f
     img_signal = remove_background(img_array, *rm_background_params, folder, check_plot)
     
     # crop out the cell using the mask
-    img_cropped = crop_image(img_array, cell_mask)
+    img_cropped = crop_image(img_signal, cell_mask)
     
     # compute CSR image, which depicts the cell with uniform intensity
     # and scale real (cropped-out) image and CSR image to have the same intensity
@@ -345,42 +347,7 @@ def compute_K_values(range_of_t, params, filenames_and_z_slices, clc_type, indic
         data.append([range_of_t, K_values_real, K_values_csr, clc_type, filename, z])
         
     return data
-    
-
-def plot_K_functions(data, result_dest, full_legend=False):
-    """
-    ...
-    """
-    plt.figure(figsize=(10,8))
-    plt.title(f"K functions, o = clca, x = clcb")
-
-    for range_of_t, K_values_real, K_values_csr, clc_type, filename, _ in data:
-
-        if clc_type == "clca":
-            marker = "o"
-        elif clc_type == "clcb":
-            marker = "x"
-
-        K_diff = np.array(K_values_real)-np.array(K_values_csr)
-        if full_legend:
-            plt.plot(range_of_t, K_diff, marker=marker, linestyle="dashed", label=filename[-14:-4])
-        else:
-            plt.plot(range_of_t, K_diff, marker=marker, linestyle="dashed")
-    
-    plt.xlabel("t")
-    plt.ylabel("K(t)")
-    if full_legend:
-        k_func_dest = os.path.join(result_dest, "K_functions_comparison_full_legend.pdf")
-        plt.legend(loc='upper right')
-        plt.savefig(k_func_dest, bbox_inches='tight')
-    else:
-        plt.plot([], color='black', marker="o", linestyle="dashed", label="Distr. CLCA - CSR")
-        plt.plot([], color='black', marker="x", linestyle="dashed", label="Distr. CLCB - CSR")
-        plt.legend(loc='upper right')
-        k_func_dest = os.path.join(result_dest, "K_functions_comparison.pdf")
-        plt.savefig(k_func_dest)
-    plt.close()
-    
+        
     
 
 """
@@ -405,5 +372,123 @@ plt.show()
 """
 
 
+#--------------------
+# "Ring" K functions
+#--------------------
 
 
+def get_K_diff(mask, img_real, img_csr, range_of_t, width, printout=True):
+    """
+    ...
+    """
+    K_values_real, K_values_ring_real, corr_real = ripleys_K_fast_ring(img_real, mask, range_of_t, width, printout)
+    K_values_csr, K_values_ring_csr, corr_csr = ripleys_K_fast_ring(img_csr, mask, range_of_t, width, printout)
+    K_diff = np.array(K_values_real) - np.array(K_values_csr)
+    K_ring_diff = np.array(K_values_ring_real) - np.array(K_values_ring_csr)
+    return K_diff, K_ring_diff, corr_real, corr_csr
+
+
+def compute_K_values_ring(range_of_t, width, params, filenames_and_z_slices, clc_type, indices, results_dest=".", check_plot=False):
+    """
+    ...
+    """
+    data = []
+    desired_int, mask_params, rm_background_params = params
+    
+    for i in indices:
+        filepath, z = filenames_and_z_slices[i]
+        filename = os.path.basename(filepath)
+        print(f"Processing {filename}...")
+        
+        # create subfolder to store plots produced while processing the image
+        # (only important for check_plot=True)
+        name = f"check_plots_{filename[:-4]}"
+        sub_results_dest = create_folder(name, os.path.join(results_dest,"check_plots"))
+        
+        img_array, metadata = load_image2D(filepath, z, channel=0)
+        img_real, img_csr, cell_mask = process_image2D(img_array, desired_int, mask_params, rm_background_params, sub_results_dest, check_plot)
+
+        print("Computing K functions...")
+        K_diff, K_ring_diff, corr_real, corr_csr = get_K_diff(cell_mask, img_real, img_csr, range_of_t, width, True)
+        
+        
+        if check_plot:
+            
+            # works only if number odd, should be given for autocorrelation
+            len_ = corr_real.shape[0]
+            lim_lower = -int(len_/2)
+            lim_upper = int(len_/2)
+
+            fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+
+            ax[0][0].imshow(img_real)
+            im1 = ax[0][0].imshow(img_real)
+            ax[0][0].set_title("Original (\"real\") image")
+            ax[0][1].set_title("(autocorr. real) - (autocor. CSR); negative values in white")
+            im2 = ax[0][1].matshow((corr_real-corr_csr), norm=LogNorm(), extent=[lim_lower, lim_upper, lim_lower, lim_upper], origin='lower')    
+            ax[1][0].set_title("Autocorr. real image")
+
+            ax[1][0].set_title("K function for (real)-(CSR)")
+            ax[1][0].plot(range_of_t, K_diff)
+            ax[1][0].set_xlabel("$t$")
+            ax[1][0].set_ylabel("$K(t)$")
+
+            ax[1][1].set_title(f"Ring K function for (real)-(CSR), width={width}")
+            ax[1][1].plot(range_of_t, K_ring_diff)
+            ax[1][1].set_xlabel("$t$")
+            ax[1][1].set_ylabel("$K_{Ring}(t)$")
+
+            plt.colorbar(im1, ax=ax[0, 0])
+            plt.colorbar(im2, ax=ax[0, 1])
+
+            #fig.suptitle(title)
+            
+            k_func_dest = os.path.join(sub_results_dest, "K_function_computation.pdf")
+            plt.savefig(k_func_dest)
+            plt.close()
+
+        # store information for later, e.g. plotting
+        data.append([range_of_t, K_diff, K_ring_diff, clc_type, filename, z])
+        
+    return data
+
+
+def plot_K_functions(data, result_dest, mode="disk", full_legend=False):
+    """
+    ...
+    """
+    plt.figure(figsize=(10,8))
+    plt.title(f"K functions, o = clca, x = clcb")
+
+    for range_of_t, K_disk_diff, K_ring_diff, clc_type, filename, _ in data:
+
+        if clc_type == "clca":
+            marker = "o"
+        elif clc_type == "clcb":
+            marker = "x"
+            
+        if mode=="disk":
+            K_diff = K_disk_diff
+            name = "K_functions_comparison"
+        elif mode=="ring":
+            K_diff = K_ring_diff
+            name = "K_ring_functions_comparison"
+
+        if full_legend:
+            plt.plot(range_of_t, K_diff, marker=marker, linestyle="dashed", label=filename[-14:-4])
+        else:
+            plt.plot(range_of_t, K_diff, marker=marker, linestyle="dashed")
+    
+    plt.xlabel("t")
+    plt.ylabel("K(t)")
+    if full_legend:
+        k_func_dest = os.path.join(result_dest, name+"_full_legend.pdf")
+        plt.legend(loc='upper right')
+        plt.savefig(k_func_dest, bbox_inches='tight')
+    else:
+        plt.plot([], color='black', marker="o", linestyle="dashed", label="Distr. CLCA - CSR")
+        plt.plot([], color='black', marker="x", linestyle="dashed", label="Distr. CLCB - CSR")
+        plt.legend(loc='upper right')
+        k_func_dest = os.path.join(result_dest, name+".pdf")
+        plt.savefig(k_func_dest)
+    plt.close()

@@ -321,3 +321,58 @@ def ripleys_K_fast(img_arr, mask, range_of_t, printout=False):
     
     return K_values
 
+
+
+def ripleys_K_fast_ring(img_arr, mask, range_of_t, width, printout=False):
+    """
+    Computes Ripley's K function for a range of t. Utilizes FFT for fast computation of auto-correlation of the image.
+    ...
+    Returns ...
+    """
+    K_values = []
+    K_values_ring = []
+    
+    # assure datatype that does not cause errors
+    arr = img_arr.astype('float32')
+    # number of pixels in desired area
+    N = np.sum(mask)
+    # sum of all pixel intensities
+    total_int = np.sum(arr)
+    # here, assume A_pixel = 1, thus A=N
+    lambda_ = total_int / N
+
+
+    t1 = time()
+    
+    # full array for the auto-correlation of the input image
+    # own implementation:
+    #full_auto_corr = auto_correlation_fft(arr)
+    # library function:
+    full_auto_corr = signal.correlate(arr, arr, method='fft')
+    
+    # array whose elements are equal to their Euclidean distance from the center
+    diff_xy = distance_arr(full_auto_corr)
+
+    for t in range_of_t:
+
+        # arrays containing the spatial auto-correlation up to distance t (+width)
+        auto_corr_t_inner = cut_circle(full_auto_corr, radius=t, diff_xy=diff_xy)
+        auto_corr_t_outer = cut_circle(full_auto_corr, radius=t+width, diff_xy=diff_xy)
+        
+        # cut out circles with specified width and radius out of autocorrelation function and sum the values
+        sum_ring = np.sum(auto_corr_t_outer-auto_corr_t_inner)
+        # cut out disks with specified radius out of autocorrelation function and sum the values
+        sum_ = np.sum(auto_corr_t_inner)
+        
+        K = sum_ * 1/lambda_ * 1/N #* 1/(2*np.pi*(t+width))
+        K_ring = sum_ring * 1/lambda_ * 1/N #* 1/(2*np.pi*(t+width))
+        
+        K_values.append(K)
+        K_values_ring.append(K_ring)
+    
+    t2 = time()
+    if printout:
+        print(f"Completed in {(t2-t1):.2f} seconds")
+    
+    return K_values, K_values_ring, full_auto_corr
+
