@@ -1,5 +1,6 @@
 from spatial_statistics_tools import *
 from process_images import *
+from statistical_testing import *
 from utilities import *
 #from skimage import feature, restoration, segmentation, exposure, img_as_float
 #from scipy.ndimage.morphology import binary_erosion, binary_dilation, binary_fill_holes
@@ -28,7 +29,7 @@ channel = 0
 check_plot = True
 
 # comment for current run
-comment = "First longer test run with new ring K function."
+comment = "Test first full run"
 
 # parameters for cropping out cell and creating CSR image
 sigma = 20
@@ -61,8 +62,10 @@ width = 1
 
 # specifies the indices for images that should be processed 
 # (index = (line number - 1) in the files clca_files.txt and clcb_files.txt)
-indices_clca = range(50,70)
-indices_clcb = range(50,70)
+indices_clca = range(len(clca_filenames_and_z_slices))
+indices_clcb = range(len(clcb_filenames_and_z_slices))
+print(f"No. of clca files used: {len(indices_clca)}")
+print(f"No. of clcb files used: {len(indices_clcb)}")
 
 params = [desired_int, mask_params, rm_background_params]
 
@@ -71,10 +74,24 @@ data_clcb = compute_K_values_ring(range_of_t, width, params, clcb_filenames_and_
     
 data = data_clca + data_clcb
 
-print("Done!")
-
 plot_K_functions(data, results_dest, mode="disk", full_legend=False)
 plot_K_functions(data, results_dest, mode="disk", full_legend=True)
 plot_K_functions(data, results_dest, mode="ring", full_legend=False)
 plot_K_functions(data, results_dest, mode="ring", full_legend=True)
 
+save_file(data_clca, "data_clca", results_dest)
+save_file(data_clcb, "data_clcb", results_dest)
+
+
+#----------------------------------------------
+# Compute averages and apply two-sample tests
+#----------------------------------------------
+
+K_data_averaged, K_ring_data_averaged = average_K_diffs([data_clca, data_clcb], results_dest)
+
+#save_file(K_data_averaged, "K_data_averaged", results_dest)
+#save_file(K_ring_data_averaged, "K_ring_data_averaged", results_dest)
+
+print("Done!")
+
+#...

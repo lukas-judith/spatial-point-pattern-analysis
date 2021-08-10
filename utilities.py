@@ -1,6 +1,7 @@
 # useful functions for storing results etc.
 
 import os
+import pickle
 from datetime import datetime
 
 
@@ -122,3 +123,24 @@ def print_tif_series(filename, folder, destination="tif_series", channel=0):
     #plt.show()
     plt.savefig(destination+"/"+filename[:-4]+"_tif_series")
     print("Done!")
+    
+    
+def save_file(file, filename, folder):  
+    """
+    Saves file using pickle.
+    """
+    path = os.path.join(folder, filename)
+    
+    with open(path, "wb") as f:   
+        pickle.dump(file, f)
+
+        
+def load_file(filename, folder): 
+    """
+    Loads file using pickle.
+    """
+    path = os.path.join(folder, filename)
+    
+    with open(path, "rb") as f:  
+        file = pickle.load(f)
+    return file

@@ -2,9 +2,13 @@ CLC_Distribution_TIFFs/
 old_results/
 old_notebooks/
 toy_data_results
+toy_data_imgs
 Results/
 tif_series/
 extracted_tifs/
+testing.ipynb
+toy_data_studies.ipynb
 .DS_Store
 .ipynb_checkpoints/
 __pycache__
+

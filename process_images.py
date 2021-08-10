@@ -6,120 +6,6 @@ from skimage.filters import gaussian
 
 from matplotlib.colors import LogNorm
 
-# specify directory
-dir_ = "/Users/lukasjudith/Documents/Studium/Master Physik Heidelberg/Semester 2/01 HCI project/Code/spatial-statistical-analysis"
-os.chdir(dir_)
-
-
-
-def create_cell_mask1(img, sigma, cutoff=0):
-    """
-    Uses ... 
-    """
-    img_blurred = gaussian(img, sigma=sigma)
-    thresh = np.mean(img_blurred) + cutoff
-    cell_mask = (img_blurred > thresh).astype('float32')
-    
-    return cell_mask, img_blurred
-
-
-def create_cell_mask2(img, sigma=30, cutoff=0.5):
-    img_blurred = exposure.equalize_hist(gaussian(img, sigma))
-    cell_mask = img_blurred > cutoff
-    return cell_mask, img_blurred
-
-
-def create_cell_mask3(img):
-    cell_mask = np.ones(img.shape)
-    return cell_mask, img
-
-
-def process_image2D(filename, folder, z, channel=0, mask_mode='blur', sigma=30, cutoff=0.5, thresh=0, desired_int=100000000, plot=False, printout=False, save=False):
-    """
-    ...
-    """
-
-    print("Processing", filename, "...")
-
-    # get array with all pixel intensities and metadata of image
-    im, metadata = load_image(filename, folder) 
-
-    # pick desired channel
-    zxy_arr = im[:, channel, :, :]
-    # extract 2D slices
-    xy_array = zxy_arr[z, :, :].astype("float32")
-    img_array = xy_array.copy()
-    
-    radius = 7
-    kernel = restoration.ball_kernel(radius, ndim=2)
-    background = restoration.rolling_ball(img_array, kernel=kernel)#radius=radius)
-    signal = img_array - background
-
-    #create mask to crop out cell 
-    if mask_mode=='blur':
-        cell_mask, img_blurred = create_cell_mask2(img_array, sigma, cutoff)
-    elif mask_mode=='uniform':
-        cell_mask, img_blurred = create_cell_mask3(img_array)
-        
-        
-    img_cropped = signal * cell_mask
-    #apply thresholds cropped image
-    img_cropped[img_cropped<thresh] = 0
-     
-    #scale array to have specified total intensity
-    total_int = np.sum(img_cropped)
-    img_cropped = img_cropped * desired_int/total_int
-
-    #create CSR image
-    img_csr = cell_mask.copy()
-    n_pixels_csr = np.sum(img_csr>0)
-    total_intesity_new = np.sum(img_cropped)
-    #scale image to have same total intensity as cropped image
-    mean_intensity_new = total_intesity_new/n_pixels_csr
-    img_csr = img_csr*mean_intensity_new
-    
-    
-    if printout:
-        print("Test:")
-        print(np.sum(img_cropped))
-        print(np.sum(img_csr))
-        print(img_array[0:2, 0:2])
-        print(img_cropped[0:2, 0:2])
-
-    #-------
-    # plot
-    #-------
-
-    fig, ax = plt.subplots(2,3, figsize=(18,12))
-    ax[0][0].imshow(img_array)#, vmin=min_intensity, vmax=max_intensity)
-    ax[0][0].set_title("Original image (2D)")
-    ax[1][0].imshow(img_array)#, vmin=min_intensity, vmax=max_intensity)
-    ax[1][0].set_title("Original image (2D)")
-    ax[0][1].imshow(img_blurred)#, vmin=min_intensity, vmax=max_intensity) 
-    ax[0][1].set_title(f"Gaussian blur")
-    ax[1][1].imshow(img_cropped)#, vmin=min_intensity, vmax=max_intensity) 
-    ax[1][1].set_title(f"Cell cropped out")
-    ax[0][2].imshow(cell_mask)#, vmin=min_intensity, vmax=max_intensity)
-    ax[0][2].set_title("Cell mask")
-    ax[1][2].imshow(img_csr)#, vmin=min_intensity, vmax=max_intensity)
-    ax[1][2].set_title(f"CSR image: every pixel {mean_intensity_new:.2f} intensity")
-
-    if save:
-        print("Saving results/cell_plots"+f"_{mask_mode}_z{z}_sigma{sigma}_cut{cutoff}_".replace('.','')+filename[:-4]+".pdf ...")
-        plt.savefig("results/cell_plots"+f"_{mask_mode}_z{z}_sigma{sigma}_cut{cutoff}_".replace('.','')+filename[:-4]+".pdf")
-    if plot:
-        plt.show()
-    
-    plt.close()
-        
-        
-    return img_cropped, img_csr, cell_mask, img_blurred
-
-
-
-
-#--------------------------------
-
 
 def load_image(path):
     """
@@ -140,7 +26,6 @@ def load_image(path):
     #for k in meta_data.keys():
     #    print(k, ":", meta_data[k])
     #print("Image shape:", im.shape)
-    
     return im, meta_data
 
 
@@ -185,7 +70,6 @@ def load_image2D(path, z, channel=0):
     return xy_array, metadata
 
 
-# todo: add option to save various images to check if method worked
 def remove_background(img_array, rolling_ball_radius, folder=".", check_plot=False):
     """
     Removes background using rolling ball algorithm.
@@ -193,7 +77,10 @@ def remove_background(img_array, rolling_ball_radius, folder=".", check_plot=Fal
     kernel = restoration.ball_kernel(rolling_ball_radius, ndim=2)
     background = restoration.rolling_ball(img_array, kernel=kernel)
     signal = img_array - background
-
+    
+    #---------------------------------------------------------------
+    # create plots for checking if the method is working correctly
+    #---------------------------------------------------------------
     if check_plot:
         fig, ax = plt.subplots(1, 3, figsize=(15,5))
         ax[0].set_title("Original image")
@@ -349,29 +236,7 @@ def compute_K_values(range_of_t, params, filenames_and_z_slices, clc_type, indic
     return data
         
     
-
-"""
-plt.figure(figsize=(6,6))
-plt.imshow(img_normalized)
-plt.show()
-
-
-plt.figure(figsize=(6,6))
-plt.imshow(img_blur)
-plt.show()
-
-
-
-plt.figure(figsize=(7,7))
-plt.plot(bin_middles, counts)
-plt.scatter([bin_middles[x]], [counts[x]], color='r', marker='x')
-#plt.plot(bin_middles, counts)
-
-plt.yscale('log')
-plt.show()
-"""
-
-
+    
 #--------------------
 # "Ring" K functions
 #--------------------
