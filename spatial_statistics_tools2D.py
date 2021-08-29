@@ -62,6 +62,7 @@ def K_values_mean_std(img, n_K, range_of_t, mask=None):
     return mean_K, std_K
 
 
+
 def ripleys_K_slow(pixel_positions, img_arr, t, _lambda):
     """
     Returns Ripley's K based on pixel intensity using for-loops.
@@ -237,7 +238,7 @@ def cut_circle(arr, radius, diff_xy):
     Takes a 2D array and sets all elements outside a circle (around center of image) with specified radius to zero. 
     """
     mask = np.ones(arr.shape)
-    mask[diff_xy>radius] = 0
+    mask[diff_xy>=radius] = 0
     return arr * mask
 
 
@@ -376,3 +377,63 @@ def ripleys_K_fast_ring(img_arr, mask, range_of_t, width, printout=False):
     
     return K_values, K_values_ring, full_auto_corr
 
+
+
+def average_K_diffs(datasets, results_dest=".", n_std=1):
+    """
+    From samples of K functions, compute and plot the averages and standard deviations.
+    """
+    
+    # average over K functions 
+    K_data_averaged = []
+    plt.figure(figsize=(8,8))
+    plt.title(f"Averaged K functions, {n_std} std error envelope")
+    
+    # e.g. datasets = [data_clca, data_clcb]
+    for data in datasets:
+        # data[i] = [range_of_t, K_diff, K_ring_diff, clc_type, filename, z]
+        # where i are idices over all files processed in the current run
+        range_of_t = data[0][0]
+        clc_type = data[0][3]
+        K_diffs = [d[1] for d in data]
+
+        K_diffs_mean = np.mean(K_diffs, axis=0)
+        K_diffs_std = np.std(K_diffs, axis=0) 
+        K_data_averaged.append([range_of_t, K_diffs_mean, K_diffs_std])
+
+        plt.plot(range_of_t, K_diffs_mean, label=clc_type)
+        plt.fill_between(range_of_t, K_diffs_mean-K_diffs_std*n_std, K_diffs_mean+K_diffs_std*n_std, alpha=0.3)
+
+    plt.xlabel("$t$")
+    plt.ylabel("$K(t)$")
+    plt.legend(loc="upper right")
+    path = os.path.join(results_dest, "K_functions_averaged.pdf")
+    plt.savefig(path)
+    
+    # average over K ring functions 
+    K_ring_data_averaged = []
+    plt.figure(figsize=(8,8))
+    plt.title(f"Averaged K ring functions, {n_std} std error envelope")
+
+    # e.g. datasets = [data_clca, data_clcb]
+    for data in datasets:
+
+        range_of_t = data[0][0]
+        clc_type = data[0][3]
+        K_diffs = [d[2] for d in data]
+
+        K_diffs_mean = np.mean(K_diffs, axis=0)
+        K_diffs_std = np.std(K_diffs, axis=0) 
+        K_ring_data_averaged.append([range_of_t, K_diffs_mean, K_diffs_std])
+
+        plt.plot(range_of_t, K_diffs_mean, label=clc_type)
+        plt.fill_between(range_of_t, K_diffs_mean-K_diffs_std*n_std, K_diffs_mean+K_diffs_std*n_std, alpha=0.3)
+
+    plt.xlabel("$t$")
+    plt.ylabel("$K_{Ring}(t)$")
+    plt.legend(loc="upper right")
+    path = os.path.join(results_dest, "K_ring_functions_averaged.pdf")
+    plt.savefig(path)
+
+    return K_data_averaged, K_ring_data_averaged
+    

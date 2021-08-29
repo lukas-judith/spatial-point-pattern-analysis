@@ -125,7 +125,7 @@ class SchillingTestFunctional():
         ax.legend(loc='upper right')
         
         fig.text(.5, .05, f"Testing at significance level {alpha}%", ha='center')
-        fig.text(.5, .0, f"Critical value is {crit_value:.2f}, test statistic has value {test_statistic:.2f}", ha='center')
+        fig.text(.5, .0, f"Critical value is {crit_value:.4f}, test statistic has value {test_statistic:.4f}", ha='center')
         
         if test_statistic>crit_value:
             fig.text(.5, -.05, f"Null hypothesis is rejected at significance level {alpha}%", ha='center')

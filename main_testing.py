@@ -3,7 +3,7 @@ from two_sample_testing import *
 from utilities import *
     
 
-results_dest = "Results/results_2021-08-07"
+results_dest = "Results/results_2021-08-25"
 
 data_clca = load_file("data_clca", results_dest)
 data_clcb = load_file("data_clcb", results_dest)
@@ -11,6 +11,7 @@ data_clcb = load_file("data_clcb", results_dest)
 functions_clca = data_to_function_objects(data_clca)
 functions_clcb = data_to_function_objects(data_clcb)
 
+Function.show_functions(functions_clca+functions_clcb, folder=results_dest, save=True)
 
 # parameters for the test
 k = 10

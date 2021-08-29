@@ -53,78 +53,49 @@ Parameters used:
         readme.write(readme_content[1:])
     
     
-def create_folder(folder_name, parent_folder):
+def create_folder(folder_name, parent_folder, allow_duplicates=True):
     """
-    Creates a folder with specified name in specified directory. If folder name already exists, 
-    create copies with slightly altered name.
-    """
-        
-    dir_ = os.path.dirname(parent_folder)
-    dir_list = os.listdir(dir_)
+    Creates a folder with specified name in specified directory. 
+    In case of allow_duplicates: If folder name already exists, create copies with slightly altered name.
+    """ 
     # if parent folder does not exist already, create it
-    if not os.path.basename(parent_folder) in dir_list:
-        os.mkdir(parent_folder)
+    if not parent_folder=='.':
+        if os.path.dirname(parent_folder)=='':
+            dir_super = '.'
+        else:
+            dir_super = os.path.dirname(parent_folder)
+        dir_super_list = os.listdir(dir_super)
+        if not os.path.basename(parent_folder) in dir_super_list:
+            os.mkdir(parent_folder)
 
     # make subfolder
     dir_parent = os.listdir(parent_folder)
 
     count = 1
     child_folder = folder_name
-
+    
     while child_folder.lower() in [path.lower() for path in dir_parent]:
+        # if duplicates are not allowed, do not create a new folder
+        if not allow_duplicates:
+            return os.path.join(parent_folder, child_folder)
         count += 1
         child_folder = folder_name + f"_#{count}"
-
+   
     dest = os.path.join(parent_folder, child_folder)
     os.mkdir(dest)
 
     return dest
 
 
-def extract_filenames(txt_filename, tif_folder):
+def get_filename_from_path(path):
     """
-    ...
+    Returns filename without file extension and parent folders.
     """
-    filenames_and_z_slices = []
-    
-    with open(txt_filename) as file:
-        content = file.read()
-        lines = content.split("\n")
-        for line in lines:
-            if len(line)>1:
-                filename, z = line.split(" ")
-                filepath = os.path.join(tif_folder, filename)
-                filenames_and_z_slices.append([filepath, int(z)-1]) # minus 1 neccessary?
-    return filenames_and_z_slices
+    basename = os.path.basename(path)
+    filename = os.path.splitext(basename)[0]
+    return filename
 
 
-
-def print_tif_series(filename, folder, destination="tif_series", channel=0):
-    """
-    From one .tif file, print every xy slice for all z values.
-    """
-    print(f"Creating series for .tif file {filename}")
-    im, _ = load_image(filename, folder) 
-
-    # pick desired channel
-    zxy_arr = im[:, channel, :, :]
-    
-    N_z = zxy_arr.shape[0]
-
-    fig, ax = plt.subplots(N_z, 1, figsize=(5, 5*N_z))
-    
-    # loop over all possible z values
-    for z in range(N_z):
-        # extract 2D slices
-        xy_array = zxy_arr[z, :, :].astype("float32")
-        ax[z].imshow(xy_array)
-        ax[z].set_title(f"z = {z}")
-    
-    #plt.show()
-    plt.savefig(destination+"/"+filename[:-4]+"_tif_series")
-    print("Done!")
-    
-    
 def save_file(file, filename, folder):  
     """
     Saves file using pickle.
@@ -144,3 +115,34 @@ def load_file(filename, folder):
     with open(path, "rb") as f:  
         file = pickle.load(f)
     return file
+
+
+
+# auxiliary functions to create the .txt files used to load the datasets
+
+def contains_any_word(string, word_list):
+    """
+    Checks if a string contains any word from a given list.
+    """
+    for word in word_list:
+        if word.lower() in string.lower():
+            return True
+    return False    
+    
+
+def create_txt_for_datasets(folder, txt_file, channel, z_slice, filter_words):
+    """
+    Auxiliary function for creating .txt files for loading datasets.
+    """
+    filtered_files = []
+    for f in sorted(os.listdir(folder)):
+        # filter out any files with any of the specified words in their filename
+        if not contains_any_word(f, filter_words):
+            filtered_files.append(f)
+
+    txt = open(txt_file, 'w')
+    for f in filtered_files:
+        txt.write(f+" "+str(channel)+" "+str(z_slice)+"\n")
+    txt.close()
+    
+    

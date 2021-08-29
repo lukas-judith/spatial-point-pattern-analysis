@@ -1,6 +1,8 @@
+import os
+import random
 import numpy as np
 import matplotlib.pyplot as plt
-import random
+
 
 
 class Function():
@@ -80,26 +82,28 @@ class Function():
     
     
     @classmethod
-    def show_functions(self, functions):
+    def show_functions(self, functions, folder=".", save=False):
         
         plt.figure(figsize=(12,9))
         colors = ['blue', 'red', 'green', 'orange', 'grey', 'purple', 'yellow', 'black']
-        markers = ['x', 'o', '*', '-']
         
         # list containing every possible type of the functions once
         types = list(np.unique([f.type for f in functions]))
         
-        for f in functions:
-            
+        for f in functions:            
             type_idx = types.index(f.type)
-            marker = markers[type_idx]
             color = colors[type_idx] 
-            plt.plot(f.x_values, f.y_values, marker=marker, color=color, linestyle='dashed')
+            plt.plot(f.x_values, f.y_values, color=color)
         
         for i in range(len(types)):
-            plt.plot([], label=types[i], marker=markers[i], color=colors[i], linestyle='dashed')
+            plt.plot([], label=types[i], color=colors[i])
         plt.legend()
-        plt.show()
+        # either save to file or show directly
+        if save:
+            plt.savefig(os.path.join(folder, "all_functions.pdf"))
+            plt.close()
+        else:
+            plt.show()
                      
     
     # maybe not as classmethod?

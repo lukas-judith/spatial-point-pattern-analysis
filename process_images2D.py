@@ -1,4 +1,4 @@
-from spatial_statistics_tools import *
+from spatial_statistics_tools2D import *
 from utilities import *
 from skimage import feature, exposure, restoration
 from scipy.ndimage.morphology import binary_erosion, binary_dilation, binary_fill_holes
@@ -14,7 +14,7 @@ def load_image(path):
     meta_data = {}
     
     with TiffFile(path) as tif:
-        # WARNING: metadata only for first page
+        # WARNING: metadata only for first page in this version
         for info in tif.pages[0].tags.values():
             key, value = info.name, info.value
             # toss unneccessary metadata
@@ -53,11 +53,22 @@ def normalize_image(img):
     return img_norm 
 
 
+def create_csr_img(mask, desired_int):
+    """
+    Generates uniformely random pixel intensities in a shape specified by mask.
+    """
+    rnd_array = np.random.random(size=mask.shape)
+    csr_img = rnd_array * mask
+    csr_img *= desired_int/np.sum(csr_img)
+    return csr_img   
+
+
 def load_image2D(path, z, channel=0):
     """
     Load 3D cell image from .tif file and extract a desired z slice.
     Returns 2D image array and metadata.
     """
+    print(f"Loading channel={channel}, z={z+1}")
     # get array with all pixel intensities and metadata of image
     im, metadata = load_image(path) 
 
@@ -70,7 +81,74 @@ def load_image2D(path, z, channel=0):
     return xy_array, metadata
 
 
-def remove_background(img_array, rolling_ball_radius, folder=".", check_plot=False):
+def get_nth_minimum_after_maximum(xs, ys, n, min_dist_to_max=0):
+    """
+    For a given 1D signal, find the global maximum and return the nth minimum
+    after this global maximum. Exclude all minima that are too close to maximum, 
+    specified by min_dist_to_max.
+    """
+    # convert to array in case that inputs are lists
+    xs_ = np.array(xs)
+    ys_ = np.array(ys)
+    
+    maximum = np.argmax(ys_)
+    minima = signal.find_peaks(-ys_)[0].astype(int)
+    
+    minima_x_pos = xs_[minima]
+    minima_dist_to_max = minima_x_pos - xs_[maximum]
+    # filter out all minima that are too close to maximum
+    minima = minima[minima_dist_to_max>min_dist_to_max]
+    
+    # get nth minimum after maximum
+    minima_after_maximum = minima[minima>maximum]
+    nth_min_after_max = minima_after_maximum[n-1]
+    return nth_min_after_max
+
+
+def print_tif_series(filepath, destination="tif_series", channel=0):
+    """
+    From one .tif file, store every xy slice for all z values.
+    """
+    filename = os.path.basename(filepath)
+    print(f"Creating series for .tif file {filename}")
+    im, _ = load_image(filepath) 
+
+    # pick desired channel
+    zxy_arr = im[:, channel, :, :]
+    
+    N_z = zxy_arr.shape[0]
+
+    fig, ax = plt.subplots(N_z, 1, figsize=(5, 5*N_z))
+    
+    # loop over all possible z values
+    for z in range(N_z):
+        # extract 2D slices
+        xy_array = zxy_arr[z, :, :].astype("float32")
+        ax[z].imshow(xy_array)
+        ax[z].set_title(f"z = {z}")
+    
+    plt.savefig(os.path.join(destination, f"{filename[:-4]}_tif_series_channel{channel}"))
+    print("Done!")
+
+
+def extract_filedata(txt_filename, tif_folder):
+    """
+    From a .txt file, extract the relevant path, z slice and channel for a dataset consisting of .tif files.
+    """
+    data = []
+    
+    with open(txt_filename) as file:
+        content = file.read()
+        lines = content.split("\n")
+        for line in lines:
+            if len(line)>1:
+                filename, channel, z = line.split(" ")
+                filepath = os.path.join(tif_folder, filename)
+                data.append([filepath, int(channel), int(z)-1])
+    return data
+
+
+def remove_background(img_array, rolling_ball_radius, folder=".", check_plot=False, z=None):
     """
     Removes background using rolling ball algorithm.
     """
@@ -90,7 +168,14 @@ def remove_background(img_array, rolling_ball_radius, folder=".", check_plot=Fal
         ax[2].set_title("Background")
         ax[2].imshow(background)
         
-        name = "check_background_removal.pdf"
+        if not z is None:
+            z_str = str(z+1)
+            # if z is one-digit number, add zero in front, e.g. 1 --> 01
+            if len(z_str)==1:
+                z_str = "0"+z_str
+            name = f"z{z_str}_check_background_removal.pdf"
+        else:
+            name = "check_background_removal.pdf"
         dest = os.path.join(folder, name)
         plt.savefig(dest)
         plt.close()
@@ -98,10 +183,14 @@ def remove_background(img_array, rolling_ball_radius, folder=".", check_plot=Fal
     return signal 
     
     
-def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, folder=".", check_plot=False):
+def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, sigma_for_finding_minima=2, n_min=1, distance_min_max=0.05, z=None, postprocessing=True, folder=".", check_plot=False):
     """
-    Creates a mask capturing the silhoutte of the cell on the input image.
+    Creates a mask capturing the silhoutte of the cell on the 2D input image.
     """
+    if len(img_array.shape)!=2:
+        print("Error! Input image must be 2-dimensional!")
+        return
+        
     # map image intensities to the interval [0,1]
     img_normalized = normalize_image(img_array)
 
@@ -119,28 +208,23 @@ def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, folder=".", 
     # find first local minimum in counts of the histogram, this should separate the peak 
     # from the background intensities and the peak from the intensities within the cell area
 
-    # smooth values to facilitate finding the local minimum
-    arr = gaussian(counts, sigma=2)
-
+    # smooth values to facilitate finding the true local minima
+    arr = gaussian(counts, sigma=sigma_for_finding_minima)
+    
     # attempt to find first minimum by checking for the first point in the plot
-    # at which the count value start increasing after the initial decrease
-    # TODO: replace with more sophisticated/robust method
-    y_old = arr[0]
-    for i in range(1,len(arr)):
-        y_new = arr[i]
-        if y_new > y_old:
-            x = i-1
-            break
-        y_old = y_new
-
-    # optimal cut-off value above which we consider the pixels to be within the cell
-    cut = bin_middles[x]
+    # after the maximum at which the count value start increasing after the initial decrease
+    x_cut = get_nth_minimum_after_maximum(xs=bin_middles, ys=arr, n=n_min, min_dist_to_max=distance_min_max)
+ 
+    # choose this as cut-off value above which we consider the pixels to be within the cell
+    cut = bin_middles[x_cut]
+    
     mask = img_blur_norm>cut
 
     # some additional processing:
     # fill holes, erode artifacts from Gaussian blur
     # erode more than necessary, then dilate again to remove smaller objects
-    mask = binary_dilation(binary_erosion(binary_fill_holes(mask), iterations=iter_erode), iterations=iter_dilate)
+    if postprocessing:
+        mask = binary_dilation(binary_erosion(binary_fill_holes(mask), iterations=iter_erode), iterations=iter_dilate)
     
     #---------------------------------------------------------------
     # create plots for checking if the method is working correctly
@@ -154,7 +238,7 @@ def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, folder=".", 
         ax[0][1].imshow(img_blur)
         ax[1][0].set_title("Smoothed values of histogram counts")
         ax[1][0].plot(bin_middles, counts)
-        ax[1][0].scatter([bin_middles[x]], [counts[x]], color='r', marker='x', label="Cut-off value")
+        ax[1][0].scatter(bin_middles[x_cut:x_cut+1], counts[x_cut:x_cut+1], color='r', marker='x', label="Cut-off value")
         ax[1][0].set_ylabel("Counts")
         ax[1][0].set_xlabel("Pixel intensity")
         ax[1][0].set_yscale('log')
@@ -166,7 +250,14 @@ def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, folder=".", 
         ax[2][1].set_title("Compare: orig. image, histogram equalized")
         ax[2][1].imshow(exposure.equalize_hist(img_array))
         
-        name = "check_cell_mask.pdf"
+        if not z is None:
+            z_str = str(z+1)
+            # if z is one-digit number, add zero in front, e.g. 1 --> 01
+            if len(z_str)==1:
+                z_str = "0"+z_str
+            name = f"z{z_str}_check_cell_mask.pdf"
+        else:
+            name = "check_cell_mask.pdf"
         dest = os.path.join(folder, name)
         plt.savefig(dest)
         plt.close()
@@ -181,61 +272,27 @@ def process_image2D(img_array, desired_int, mask_params, rm_background_params, f
     #TODO: add plotting options
 
     # compute mask that captures the silhouette of the cell.
-    cell_mask = create_mask(img_array, *mask_params, folder, check_plot)
+    cell_mask = create_mask(img_array, *mask_params, folder=folder, check_plot=check_plot)
     
     # remove background from cell image
-    img_signal = remove_background(img_array, *rm_background_params, folder, check_plot)
+    img_signal = remove_background(img_array, *rm_background_params, folder=folder, check_plot=check_plot)
     
     # crop out the cell using the mask
     img_cropped = crop_image(img_signal, cell_mask)
     
     # compute CSR image, which depicts the cell with uniform intensity
-    # and scale real (cropped-out) image and CSR image to have the same intensity
-    img_csr = scale_image(cell_mask, desired_int) 
+    # and scale real (cropped-out) image and CSR image to have the sum of pixel intensities
+    img_csr = create_csr_img(cell_mask, desired_int) 
     img_real = scale_image(img_cropped, desired_int)
+    
+    # check if sum of pixel intensities is the same for real and CSR image
+    if not np.isclose(np.sum(img_real), np.sum(img_csr), rtol=1e-05):
+        print("Error! Sum of all pixel intensities is different for real and CSR image!")
+        return
     
     return img_real, img_csr, cell_mask
 
-
-def compute_K_values(range_of_t, params, filenames_and_z_slices, clc_type, indices, results_dest=".", check_plot=False):
-    """
-    ...
-    """
-    data = []
-    desired_int, mask_params, rm_background_params = params
-    
-    for i in indices:
-        filepath, z = filenames_and_z_slices[i]
-        filename = os.path.basename(filepath)
-        print(f"Processing {filename}...")
-        
-        # create subfolder to store plots produced while processing the image
-        # (only important for check_plot=True)
-        name = f"check_plots_{filename[:-4]}"
-        sub_results_dest = create_folder(name, os.path.join(results_dest,"check_plots"))
-        
-        img_array, metadata = load_image2D(filepath, z, channel=0)
-        img_real, img_csr, cell_mask = process_image2D(img_array, desired_int, mask_params, rm_background_params, sub_results_dest, check_plot)
-
-        print("Computing K functions...")
-        K_values_real = ripleys_K_fast(img_real, cell_mask, range_of_t, printout=False)
-        K_values_csr = ripleys_K_fast(img_csr, cell_mask, range_of_t, printout=False)
-        
-        if check_plot:
-            K_diff = np.array(K_values_real)-np.array(K_values_csr)
-            plt.plot(range_of_t, K_diff, marker='o', linestyle="dashed")#, label=filename[-14:-4])
-            plt.xlabel("t")
-            plt.ylabel("K(t)")
-            k_func_dest = os.path.join(sub_results_dest, "K_function.pdf")
-            plt.savefig(k_func_dest)
-            plt.close()
-
-        # store information for later, e.g. plotting
-        data.append([range_of_t, K_values_real, K_values_csr, clc_type, filename, z])
-        
-    return data
-        
-    
+  
     
 #--------------------
 # "Ring" K functions
@@ -253,26 +310,38 @@ def get_K_diff(mask, img_real, img_csr, range_of_t, width, printout=True):
     return K_diff, K_ring_diff, corr_real, corr_csr
 
 
-def compute_K_values_ring(range_of_t, width, params, filenames_and_z_slices, clc_type, indices, results_dest=".", check_plot=False):
+def compute_K_values(range_of_t, width, params, dataset, data_type, results_dest=".", check_plot=False):
     """
     ...
+    
+    Args:
+        str data_type: specifies what sample the given data is from
+        
     """
-    data = []
+    K_function_data = []
     desired_int, mask_params, rm_background_params = params
     
+    indices = range(len(dataset))
+    
+    count=0
     for i in indices:
-        filepath, z = filenames_and_z_slices[i]
+        count+=1
+        filepath, channel, z = dataset[i]
         filename = os.path.basename(filepath)
-        print(f"Processing {filename}...")
+        print(f"[{data_type} {count}/{len(indices)}] Processing {filename}...")
         
         # create subfolder to store plots produced while processing the image
         # (only important for check_plot=True)
-        name = f"check_plots_{filename[:-4]}"
+        name = f"{data_type}_check_plots_{filename[:-4]}"
         sub_results_dest = create_folder(name, os.path.join(results_dest,"check_plots"))
+
+        img_array, metadata = load_image2D(filepath, z, channel=channel)
         
-        img_array, metadata = load_image2D(filepath, z, channel=0)
+        # 1. Preprocessing
+        print("Preprocessing image...")
         img_real, img_csr, cell_mask = process_image2D(img_array, desired_int, mask_params, rm_background_params, sub_results_dest, check_plot)
 
+        # 2. K-functions
         print("Computing K functions...")
         K_diff, K_ring_diff, corr_real, corr_csr = get_K_diff(cell_mask, img_real, img_csr, range_of_t, width, True)
         
@@ -313,9 +382,9 @@ def compute_K_values_ring(range_of_t, width, params, filenames_and_z_slices, clc
             plt.close()
 
         # store information for later, e.g. plotting
-        data.append([range_of_t, K_diff, K_ring_diff, clc_type, filename, z])
+        K_function_data.append([range_of_t, K_diff, K_ring_diff, data_type, filename, z])
         
-    return data
+    return K_function_data
 
 
 def plot_K_functions(data, result_dest, mode="disk", full_legend=False):
@@ -325,11 +394,11 @@ def plot_K_functions(data, result_dest, mode="disk", full_legend=False):
     plt.figure(figsize=(10,8))
     plt.title(f"K functions, o = clca, x = clcb")
 
-    for range_of_t, K_disk_diff, K_ring_diff, clc_type, filename, _ in data:
+    for range_of_t, K_disk_diff, K_ring_diff, data_type, filename, _ in data:
 
-        if clc_type == "clca":
+        if data_type == "clca":
             marker = "o"
-        elif clc_type == "clcb":
+        elif data_type == "clcb":
             marker = "x"
             
         if mode=="disk":
