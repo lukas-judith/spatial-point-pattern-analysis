@@ -81,17 +81,28 @@ def load_image2D(path, z, channel=0):
     return xy_array, metadata
 
 
-def get_nth_minimum_after_maximum(xs, ys, n, min_dist_to_max=0):
+def get_nth_minimum_after_maximum(xs, ys, n, min_dist_to_max=0, max_position_thresh=1):
     """
-    For a given 1D signal, find the global maximum and return the nth minimum
-    after this global maximum. Exclude all minima that are too close to maximum, 
+    For a given 1D signal (xs should be normalized to [0,1]), find the global maximum and return the 
+    nth minimum after this global maximum. Exclude all minima that are too close to maximum, 
     specified by min_dist_to_max.
     """
+    
+    if np.min(xs)<0 or np.max(xs)>1:
+        print("Error! Input signal is not normalized to [0,1]!")
+        return 
+    
     # convert to array in case that inputs are lists
     xs_ = np.array(xs)
     ys_ = np.array(ys)
     
     maximum = np.argmax(ys_)
+    maximum_pos_x = xs[maximum]
+    
+    if maximum_pos_x > max_position_thresh:
+        # position of maximum is outside of accepted range from 0 to max_position_thresh
+        return None
+    
     minima = signal.find_peaks(-ys_)[0].astype(int)
     
     minima_x_pos = xs_[minima]
@@ -101,6 +112,11 @@ def get_nth_minimum_after_maximum(xs, ys, n, min_dist_to_max=0):
     
     # get nth minimum after maximum
     minima_after_maximum = minima[minima>maximum]
+    
+    if len(minima_after_maximum)<n:
+        # minimum could not be found
+        return None
+    
     nth_min_after_max = minima_after_maximum[n-1]
     return nth_min_after_max
 
@@ -183,9 +199,34 @@ def remove_background(img_array, rolling_ball_radius, folder=".", check_plot=Fal
     return signal 
     
     
-def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, sigma_for_finding_minima=2, n_min=1, distance_min_max=0.05, z=None, postprocessing=True, folder=".", check_plot=False):
+def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, sigma_for_finding_minima=2, n_min=1, distance_min_max=0.05, max_position_thresh=0.1, z=None, postprocessing=True, folder=".", check_plot=False, custom_thresh=None):
     """
-    Creates a mask capturing the silhoutte of the cell on the 2D input image.
+    Given a 2D image, computes a binary mask capturing the shape of the object(s) in the image. Uses binary dilation,
+    erosion and filling holes to to fill gaps and remove artifacts. When check_plot=True, plots of intermediate results 
+    during the computation are produced. Parameters can then be adjusted accordingly. 
+    
+    Args postprocessing: 
+        img (np.ndarray): 2D input image
+        sigma (float): standard deviation for Gaussian blur
+        iter_erode (int): number of iterations for binary dilation of mask (postprocessing)
+        iter_dilate (int): number of iterations for binary erosion of mask (postprocessing)
+        
+    Args for finding optimal cut-off value: 
+        sigma_for_finding_minima (float): standard deviation for smoothing the function of histogram counts for intensities 
+            of the blurred image; can be used to facilitate finding the optimal cut-off value for computing the binary 2D mask
+        n_min (int): number of minimum in function of histogram counts for intensities 
+            of the blurred image to be selected as the cut-off value for computing the binary 2D mask
+        distance_min_max (float): minimum distance (assumes normalized images, i.e. in interval [0,1]) that the minimum
+            (of the function of histogram counts for intensities of the blurred image) is allowed to have from the 
+            global maximum 
+        max_position_thresh (float): maximum position (assumes normalized images, i.e. in interval [0,1]) that the maximum
+            (of the function of histogram counts for intensities of the blurred image) is allowed to have 
+        custom_thresh (float): if not None, choose this value for the cut-off (instead of finding the value from the
+            histogram counts)
+        
+    Returns:
+        np.ndarray : 2D binary mask capturing the shape of the object(s) on the input image
+    
     """
     if len(img_array.shape)!=2:
         print("Error! Input image must be 2-dimensional!")
@@ -213,12 +254,20 @@ def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, sigma_for_fi
     
     # attempt to find first minimum by checking for the first point in the plot
     # after the maximum at which the count value start increasing after the initial decrease
-    x_cut = get_nth_minimum_after_maximum(xs=bin_middles, ys=arr, n=n_min, min_dist_to_max=distance_min_max)
+    x_cut = get_nth_minimum_after_maximum(xs=bin_middles, ys=arr, n=n_min, min_dist_to_max=distance_min_max, max_position_thresh=max_position_thresh)
  
     # choose this as cut-off value above which we consider the pixels to be within the cell
-    cut = bin_middles[x_cut]
+    if x_cut is None:
+        # if no minimum can be found, discard the slice, i.e. set all values to zero
+        # (assuming all values are >= 0)
+        cut = 0
+    else:
+        cut = bin_middles[x_cut]
     
     mask = img_blur_norm>cut
+    
+    if not custom_thresh is None:
+        mask = img_blur_norm>custom_thresh
 
     # some additional processing:
     # fill holes, erode artifacts from Gaussian blur
@@ -236,13 +285,16 @@ def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, sigma_for_fi
         ax[0][0].imshow(img_array)
         ax[0][1].set_title("Blurred image")
         ax[0][1].imshow(img_blur)
-        ax[1][0].set_title("Smoothed values of histogram counts")
         ax[1][0].plot(bin_middles, counts)
-        ax[1][0].scatter(bin_middles[x_cut:x_cut+1], counts[x_cut:x_cut+1], color='r', marker='x', label="Cut-off value")
-        ax[1][0].set_ylabel("Counts")
-        ax[1][0].set_xlabel("Pixel intensity")
-        ax[1][0].set_yscale('log')
-        ax[1][0].legend()
+        if not x_cut is None:
+            ax[1][0].scatter(bin_middles[x_cut:x_cut+1], counts[x_cut:x_cut+1], color='r', marker='x', label=f"Cut-off = {cut}")
+            ax[1][0].set_ylabel("Counts")
+            ax[1][0].set_xlabel("Pixel intensity")
+            ax[1][0].set_yscale('log')
+            ax[1][0].legend()
+            ax[1][0].set_title("Smoothed values of histogram counts")
+        else:
+            ax[1][0].set_title("No acceptable cut-off value found")
         ax[1][1].set_title("Mask = blurred image after cut-off")
         ax[1][1].imshow(mask)
         ax[2][0].set_title("Overlay of orig. image with mask")
@@ -267,17 +319,17 @@ def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, sigma_for_fi
 
 def process_image2D(img_array, desired_int, mask_params, rm_background_params, folder=".", check_plot=False):
     """
-    ...
+    Performs preprocessing of 2D image, including background removal and computation of binary 2D mask
+    capturing the object(s) on the image. Returns real and CSR image to be used in K-function computation
+    as well as the binary mask capturing the object(s) on the image.
     """
-    #TODO: add plotting options
-
     # compute mask that captures the silhouette of the cell.
     cell_mask = create_mask(img_array, *mask_params, folder=folder, check_plot=check_plot)
     
     # remove background from cell image
     img_signal = remove_background(img_array, *rm_background_params, folder=folder, check_plot=check_plot)
     
-    # crop out the cell using the mask
+    # crop out the object(s) using the mask
     img_cropped = crop_image(img_signal, cell_mask)
     
     # compute CSR image, which depicts the cell with uniform intensity
@@ -293,136 +345,3 @@ def process_image2D(img_array, desired_int, mask_params, rm_background_params, f
     return img_real, img_csr, cell_mask
 
   
-    
-#--------------------
-# "Ring" K functions
-#--------------------
-
-
-def get_K_diff(mask, img_real, img_csr, range_of_t, width, printout=True):
-    """
-    ...
-    """
-    K_values_real, K_values_ring_real, corr_real = ripleys_K_fast_ring(img_real, mask, range_of_t, width, printout)
-    K_values_csr, K_values_ring_csr, corr_csr = ripleys_K_fast_ring(img_csr, mask, range_of_t, width, printout)
-    K_diff = np.array(K_values_real) - np.array(K_values_csr)
-    K_ring_diff = np.array(K_values_ring_real) - np.array(K_values_ring_csr)
-    return K_diff, K_ring_diff, corr_real, corr_csr
-
-
-def compute_K_values(range_of_t, width, params, dataset, data_type, results_dest=".", check_plot=False):
-    """
-    ...
-    
-    Args:
-        str data_type: specifies what sample the given data is from
-        
-    """
-    K_function_data = []
-    desired_int, mask_params, rm_background_params = params
-    
-    indices = range(len(dataset))
-    
-    count=0
-    for i in indices:
-        count+=1
-        filepath, channel, z = dataset[i]
-        filename = os.path.basename(filepath)
-        print(f"[{data_type} {count}/{len(indices)}] Processing {filename}...")
-        
-        # create subfolder to store plots produced while processing the image
-        # (only important for check_plot=True)
-        name = f"{data_type}_check_plots_{filename[:-4]}"
-        sub_results_dest = create_folder(name, os.path.join(results_dest,"check_plots"))
-
-        img_array, metadata = load_image2D(filepath, z, channel=channel)
-        
-        # 1. Preprocessing
-        print("Preprocessing image...")
-        img_real, img_csr, cell_mask = process_image2D(img_array, desired_int, mask_params, rm_background_params, sub_results_dest, check_plot)
-
-        # 2. K-functions
-        print("Computing K functions...")
-        K_diff, K_ring_diff, corr_real, corr_csr = get_K_diff(cell_mask, img_real, img_csr, range_of_t, width, True)
-        
-        
-        if check_plot:
-            
-            # works only if number odd, should be given for autocorrelation
-            len_ = corr_real.shape[0]
-            lim_lower = -int(len_/2)
-            lim_upper = int(len_/2)
-
-            fig, ax = plt.subplots(2, 2, figsize=(12, 10))
-
-            ax[0][0].imshow(img_real)
-            im1 = ax[0][0].imshow(img_real)
-            ax[0][0].set_title("Original (\"real\") image")
-            ax[0][1].set_title("(autocorr. real) - (autocor. CSR); negative values in white")
-            im2 = ax[0][1].matshow((corr_real-corr_csr), norm=LogNorm(), extent=[lim_lower, lim_upper, lim_lower, lim_upper], origin='lower')    
-            ax[1][0].set_title("Autocorr. real image")
-
-            ax[1][0].set_title("K function for (real)-(CSR)")
-            ax[1][0].plot(range_of_t, K_diff)
-            ax[1][0].set_xlabel("$t$")
-            ax[1][0].set_ylabel("$K(t)$")
-
-            ax[1][1].set_title(f"Ring K function for (real)-(CSR), width={width}")
-            ax[1][1].plot(range_of_t, K_ring_diff)
-            ax[1][1].set_xlabel("$t$")
-            ax[1][1].set_ylabel("$K_{Ring}(t)$")
-
-            plt.colorbar(im1, ax=ax[0, 0])
-            plt.colorbar(im2, ax=ax[0, 1])
-
-            #fig.suptitle(title)
-            
-            k_func_dest = os.path.join(sub_results_dest, "K_function_computation.pdf")
-            plt.savefig(k_func_dest)
-            plt.close()
-
-        # store information for later, e.g. plotting
-        K_function_data.append([range_of_t, K_diff, K_ring_diff, data_type, filename, z])
-        
-    return K_function_data
-
-
-def plot_K_functions(data, result_dest, mode="disk", full_legend=False):
-    """
-    ...
-    """
-    plt.figure(figsize=(10,8))
-    plt.title(f"K functions, o = clca, x = clcb")
-
-    for range_of_t, K_disk_diff, K_ring_diff, data_type, filename, _ in data:
-
-        if data_type == "clca":
-            marker = "o"
-        elif data_type == "clcb":
-            marker = "x"
-            
-        if mode=="disk":
-            K_diff = K_disk_diff
-            name = "K_functions_comparison"
-        elif mode=="ring":
-            K_diff = K_ring_diff
-            name = "K_ring_functions_comparison"
-
-        if full_legend:
-            plt.plot(range_of_t, K_diff, marker=marker, linestyle="dashed", label=filename[-14:-4])
-        else:
-            plt.plot(range_of_t, K_diff, marker=marker, linestyle="dashed")
-    
-    plt.xlabel("t")
-    plt.ylabel("K(t)")
-    if full_legend:
-        k_func_dest = os.path.join(result_dest, name+"_full_legend.pdf")
-        plt.legend(loc='upper right')
-        plt.savefig(k_func_dest, bbox_inches='tight')
-    else:
-        plt.plot([], color='black', marker="o", linestyle="dashed", label="Distr. CLCA - CSR")
-        plt.plot([], color='black', marker="x", linestyle="dashed", label="Distr. CLCB - CSR")
-        plt.legend(loc='upper right')
-        k_func_dest = os.path.join(result_dest, name+".pdf")
-        plt.savefig(k_func_dest)
-    plt.close()

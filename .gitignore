@@ -10,6 +10,7 @@ tif_series/
 extracted_tifs/
 testing.ipynb
 toy_data_studies.ipynb
+finished_files.txt
 .DS_Store
 .ipynb_checkpoints/
 __pycache__
