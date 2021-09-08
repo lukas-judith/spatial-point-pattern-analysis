@@ -1,15 +1,14 @@
 CLC_Distribution_TIFFs/
+functional_data.py
 old_results/
-notebooks/
+current_notebooks/
 old_notebooks/
 toy_data_results
-toy_data_imgs
 Results/
 temp/
 tif_series/
 extracted_tifs/
 testing.ipynb
-toy_data_studies.ipynb
 finished_files.txt
 .DS_Store
 .ipynb_checkpoints/
