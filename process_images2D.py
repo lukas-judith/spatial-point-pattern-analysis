@@ -287,7 +287,7 @@ def create_mask(img_array, sigma=20, iter_erode=35, iter_dilate=20, sigma_for_fi
         ax[0][1].imshow(img_blur)
         ax[1][0].plot(bin_middles, counts)
         if not x_cut is None:
-            ax[1][0].scatter(bin_middles[x_cut:x_cut+1], counts[x_cut:x_cut+1], color='r', marker='x', label=f"Cut-off = {cut}")
+            ax[1][0].scatter(bin_middles[x_cut:x_cut+1], counts[x_cut:x_cut+1], color='r', marker='x', label=f"Cut-off = {cut:.4f}")
             ax[1][0].set_ylabel("Counts")
             ax[1][0].set_xlabel("Pixel intensity")
             ax[1][0].set_yscale('log')
