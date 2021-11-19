@@ -3,6 +3,7 @@ functional_data.py
 old_results/
 current_notebooks/
 old_notebooks/
+PAPER_RESULTS/
 toy_data_results
 Results/
 temp/
